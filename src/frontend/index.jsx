@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, { Text } from '@forge/react';
-import { invoke } from '@forge/bridge';
+import { callBackend } from "./index";
 
 const App = () => {
-  const [data, setData] = useState(null);
+  const [data] = useState(null);
   useEffect(() => {
-    invoke('getText', { example: 'my-invoke-variable' }).then(setData);
+    const result = callBackend('writeText', { example: 'Hello from frontend!' });
   }, []);
 
   return (
