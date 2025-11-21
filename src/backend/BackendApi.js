@@ -8,16 +8,16 @@ export const resolver = makeResolver({
 	},
 
 	/**
-	 * Get employee overtime data
+	 * Get employee overtime data (async)
 	 */
-	getEmployeeOvertimeData() {
-		return backendService.getEmployeeOvertimeData();
+	async getEmployeeOvertimeData() {
+		return await backendService.getEmployeeOvertimeData();
 	},
 
 	/**
-	 * Get overtime summary statistics
+	 * Get overtime summary statistics (async)
 	 */
-	getOvertimeSummary() {
-		return backendService.getOvertimeSummary();
+	async getOvertimeSummary() {
+		return await backendService.getOvertimeSummary();
 	},
 });
