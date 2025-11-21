@@ -1,199 +1,226 @@
 import { makeInvoke } from "@forge/bridge";
-import ForgeReconciler, { Badge, DynamicTable, Heading, Stack, Text } from "@forge/react";
+import ForgeReconciler, { Badge, DynamicTable, Heading, Stack, Text, Box, Strong } from "@forge/react";
 import React, { useEffect, useState } from "react";
 
 export const callBackend = makeInvoke();
 
 /**
- * Avatar component that displays initials from first and last name
+ * Employee Avatar Component - displays avatar from API or initials fallback
  */
-const InitialsAvatar = ({ firstName, lastName, size = 40 }) => {
-	const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+const EmployeeAvatar = ({ name, size = 48 }) => {
+    // deterministic "random" color based on name
+    const COLORS = [
+        "#1F77B4", "#FF7F0E", "#2CA02C", "#D62728",
+        "#9467BD", "#8C564B", "#E377C2", "#7F7F7F",
+        "#BCBD22", "#17BECF"
+    ];
 
-	// Generate a consistent color based on the name
-	const getColorFromName = (name) => {
-		let hash = 0;
-		for (let i = 0; i < name.length; i++) {
-			hash = name.charCodeAt(i) + ((hash << 5) - hash);
-		}
-		const hue = hash % 360;
-		return `hsl(${hue}, 70%, 60%)`;
-	};
+    const hashName = (s = "") => {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) {
+            h = (h << 5) - h + s.charCodeAt(i);
+            h |= 0;
+        }
+        return Math.abs(h);
+    };
 
-	const backgroundColor = getColorFromName(`${firstName}${lastName}`);
+    const getBgColor = (fullName) => {
+        if (!fullName) return COLORS[0];
+        const key = fullName.trim().toLowerCase();
+        return COLORS[hashName(key) % COLORS.length];
+    };
 
-	const avatarStyle = {
-		width: `${size}px`,
-		height: `${size}px`,
-		borderRadius: "50%",
-		backgroundColor,
-		color: "white",
-		display: "inline-flex",
-		alignItems: "center",
-		justifyContent: "center",
-		fontWeight: "bold",
-		fontSize: `${size / 2.5}px`,
-		marginRight: "12px",
-		flexShrink: 0,
-	};
+    const hexToRgb = (hex) => {
+        const c = hex.replace("#", "");
+        const bigint = parseInt(c, 16);
+        return [ (bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255 ];
+    };
 
-	const containerStyle = {
-		display: "flex",
-		alignItems: "center",
-		gap: "8px",
-	};
+    const getTextColor = (bgHex) => {
+        const [r, g, b] = hexToRgb(bgHex);
+        const luminance = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+        return luminance > 0.6 ? "#0B1A2B" : "#FFFFFF";
+    };
 
-	const nameContainerStyle = {
-		display: "flex",
-		flexDirection: "column",
-	};
+    const firstInitial = (fullName) => {
+        if (!fullName) return "?";
+        return fullName.trim().split(/\s+/)[0].charAt(0).toUpperCase();
+    };
 
-	const nameStyle = {
-		fontWeight: "500",
-		fontSize: "14px",
-	};
+    const bg = getBgColor(name);
+    const textColor = getTextColor(bg);
+    const fontSize = Math.max(14, Math.round(size * 0.52));
 
-	const emailStyle = {
-		fontSize: "12px",
-		color: "#6B778C",
-		marginTop: "2px",
-	};
+    const avatarStyle = {
+        width: `${size}px`,
+        height: `${size}px`,
+        minWidth: `${size}px`,
+        minHeight: `${size}px`,
+        borderRadius: "50%",
+        backgroundColor: bg,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        boxSizing: "border-box",
+        flex: "0 0 auto",
+        flexShrink: 0,
+        alignSelf: "center",
+        boxShadow: "0 1px 2px rgba(11,26,43,0.12)"
+    };
 
-	return (
-		<div style={containerStyle}>
-			<div style={avatarStyle}>{initials}</div>
-			<div style={nameContainerStyle}>
-				<span style={nameStyle}>
-					{firstName} {lastName}
-				</span>
-				<span style={emailStyle}>@{firstName.toLowerCase()}</span>
-			</div>
-		</div>
-	);
+    const letterStyle = {
+        color: textColor,
+        fontSize,
+        fontWeight: 700,
+        lineHeight: 1,
+        fontFamily: "inherit",
+    };
+
+    return (
+        <Stack inline space="small" align="center">
+            <Box style={avatarStyle}>
+                <Text style={letterStyle}>{firstInitial(name)}</Text>
+            </Box>
+            <Text>{name}</Text>
+        </Stack>
+    );
 };
 
 /**
  * Main Overtime Calculator Component
  */
 const App = () => {
-	const [employees, setEmployees] = useState([]);
-	const [summary, setSummary] = useState(null);
-	const [loading, setLoading] = useState(true);
+    const [employees, setEmployees] = useState([]);
+    const [summary, setSummary] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-	useEffect(() => {
-		const fetchData = async () => {
-			try {
-				const [employeeData, summaryData] = await Promise.all([
-					callBackend("getEmployeeOvertimeData"),
-					callBackend("getOvertimeSummary"),
-				]);
-				setEmployees(employeeData);
-				setSummary(summaryData);
-			} catch (error) {
-				console.error("Error fetching overtime data:", error);
-			} finally {
-				setLoading(false);
-			}
-		};
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // IMPORTANT: only request users that have JTTP data
+                const [employeeData, summaryData] = await Promise.all([
+                    callBackend("getEmployeeOvertimeData"),
+                    callBackend("getOvertimeSummary"),
+                ]);
+                setEmployees(employeeData || []);
+                setSummary(summaryData || null);
+            } catch (error) {
+                console.error("Error fetching overtime data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-		fetchData();
-	}, []);
+        fetchData();
+    }, []);
 
-	const formatHours = (hours) => {
-		return `${hours.toFixed(1)}h`;
-	};
+    const formatHours = (hours) => {
+        if (hours === null || hours === undefined) return "0.0h";
+        return `${hours.toFixed(1)}h`;
+    };
 
-	const formatDate = (dateString) => {
-		return new Date(dateString).toLocaleDateString("en-US", {
-			year: "numeric",
-			month: "short",
-			day: "numeric",
-		});
-	};
+    const formatPercentage = (percentage) => {
+        if (percentage === null || percentage === undefined) return "0.0%";
+        return `${percentage.toFixed(1)}%`;
+    };
 
-	// Prepare table headers
-	const head = {
-		cells: [
-			{ key: "employee", content: "Employee" },
-			{ key: "startDate", content: "Start Date" },
-			{ key: "expectedDaily", content: "Expected Daily Hours" },
-			{ key: "workedHours", content: "Worked Hours" },
-			{ key: "extraHours", content: "Extra Hours" },
-			{ key: "overtimeHours", content: "Overtime Hours" },
-		],
-	};
+    // Prepare table headers
+    const head = {
+        cells: [
+            { key: "employee", content: "Employee", width: 30 },
+            { key: "totalHours", content: "Total Hours", width: 12 },
+            { key: "requiredHours", content: "Required Hours", width: 12 },
+            { key: "overtime", content: "Overtime", width: 12 },
+            { key: "overtimePercentage", content: "Overtime %", width: 12 },
+            { key: "billable", content: "Billable", width: 11 },
+            { key: "nonBillable", content: "Non-Billable", width: 11 },
+        ],
+    };
 
-	// Prepare table rows
-	const rows = employees.map((employee) => ({
-		key: employee.id,
-		cells: [
-			{
-				key: "employee",
-				content: <InitialsAvatar firstName={employee.firstName} lastName={employee.lastName} />,
-			},
-			{
-				key: "startDate",
-				content: <Text>{formatDate(employee.startDate)}</Text>,
-			},
-			{
-				key: "expectedDaily",
-				content: <Text>{formatHours(employee.expectedDailyHours)}</Text>,
-			},
-			{
-				key: "workedHours",
-				content: <Text>{formatHours(employee.workedHours)}</Text>,
-			},
-			{
-				key: "extraHours",
-				content: (
-					<Badge
-						appearance={employee.extraHours >= 0 ? "primary" : "default"}
-						text={employee.extraHours >= 0 ? `+${formatHours(employee.extraHours)}` : formatHours(employee.extraHours)}
-					/>
-				),
-			},
-			{
-				key: "overtimeHours",
-				content: (
-					<Badge
-						appearance={employee.overtimeHours > 0 ? "added" : "default"}
-						text={formatHours(employee.overtimeHours)}
-					/>
-				),
-			},
-		],
-	}));
+    // Prepare table rows
+    const rows = employees.map((employee) => ({
+        key: employee.id,
+        cells: [
+            {
+                key: "employee",
+                content: <EmployeeAvatar name={employee.name} avatar={employee.avatar} />,
+            },
+            {
+                key: "totalHours",
+                content: <Text>{formatHours(employee.totalHours)}</Text>,
+            },
+            {
+                key: "requiredHours",
+                content: <Text>{formatHours(employee.requiredHours)}</Text>,
+            },
+            {
+                key: "overtime",
+                content: (
+                    <Badge
+                        appearance={employee.overtime >= 0 ? "primary" : "default"}
+                        text={employee.overtime >= 0 ? `+${formatHours(employee.overtime)}` : formatHours(employee.overtime)}
+                    />
+                ),
+            },
+            {
+                key: "overtimePercentage",
+                content: (
+                    <Badge
+                        appearance={employee.overtimePercentage >= 0 ? "added" : "removed"}
+                        text={
+                            employee.overtimePercentage >= 0
+                                ? `+${formatPercentage(employee.overtimePercentage)}`
+                                : formatPercentage(employee.overtimePercentage)
+                        }
+                    />
+                ),
+            },
+            {
+                key: "billable",
+                content: <Text>{formatHours(employee.billableHours)}</Text>,
+            },
+            {
+                key: "nonBillable",
+                content: <Text>{formatHours(employee.nonBillableHours)}</Text>,
+            },
+        ],
+    }));
 
-	if (loading) {
-		return (
-			<Stack space="medium">
-				<Heading size="large">Work Hours Overtime Calculator</Heading>
-				<Text>Loading employee data...</Text>
-			</Stack>
-		);
-	}
+    if (loading) {
+        return (
+            <Stack space="medium">
+                <Heading size="large">Work Hours Overtime Calculator</Heading>
+                <Text>Loading employee data from JTTP API...</Text>
+            </Stack>
+        );
+    }
 
-	return (
-		<Stack space="medium">
-			<Heading size="large">Work Hours Overtime Calculator</Heading>
+    return (
+        <Stack space="medium">
+            <Heading size="large">Work Hours Overtime Calculator</Heading>
 
-			{summary && (
-				<Stack space="small">
-					<Text>
-						<strong>Summary:</strong> {summary.employeeCount} employees • Total Worked:{" "}
-						{formatHours(summary.totalWorked)} • Total Overtime: {formatHours(summary.totalOvertime)} • Average
-						Overtime: {formatHours(summary.averageOvertime)}
-					</Text>
-				</Stack>
-			)}
+            {summary && (
+                <Stack space="small">
+                    <Text><Strong>Summary Statistics</Strong></Text>
+                    <Text>
+                        Total Employees: {summary.totalEmployees} • Average Overtime: {formatHours(summary.averageOvertime)} •
+                        Total Overtime: {formatHours(summary.totalOvertime)}
+                    </Text>
+                    <Text>
+                        Employees with Overtime: {summary.employeesWithOvertime} • Employees with Undertime: {summary.employeesWithUndertime}
+                    </Text>
+                </Stack>
+            )}
 
-			<DynamicTable head={head} rows={rows} isLoading={loading} emptyView={<Text>No employee data available</Text>} />
-		</Stack>
-	);
+            <DynamicTable
+                head={head}
+                rows={rows}
+                isLoading={loading}
+                emptyView={<Text>No employee worklog data available. Please check JTTP API connection.</Text>}
+            />
+        </Stack>
+    );
 };
 
-ForgeReconciler.render(
-	<React.StrictMode>
-		<App />
-	</React.StrictMode>,
-);
+ForgeReconciler.render(<App />);
