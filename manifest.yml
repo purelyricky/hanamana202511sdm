@@ -1,17 +1,32 @@
 modules:
   jira:globalPage:
     - key: hanamana-overtime-calculator
-      resource: main
+      resource: frontend
       resolver:
-        function: resolver
+        function: backend
       render: native
-      title: Hanamana Overtime Calculator
+      title: Overtime Calculator
   function:
-    - key: resolver
-      handler: index.handler
+    - key: backend
+      handler: backend/BackendApi.handler
 resources:
-  - key: main
+  - key: frontend
     path: src/frontend/index.jsx
+permissions:
+  scopes:
+    - read:jira-user
+    - read:jira-work
+    - write:jira-work
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - remote: jttp-cloud
+remotes:
+  - key: jttp-cloud
+    baseUrl: "https://jttp-cloud.everit.biz/timetracker/api/latest"
+    operations:
+      - fetch
 app:
   runtime:
     name: nodejs22.x
