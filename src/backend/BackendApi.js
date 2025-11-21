@@ -6,4 +6,18 @@ export const resolver = makeResolver({
 		const { example } = request.payload;
 		return backendService.getText(example);
 	},
+
+	/**
+	 * Get employee overtime data
+	 */
+	getEmployeeOvertimeData() {
+		return backendService.getEmployeeOvertimeData();
+	},
+
+	/**
+	 * Get overtime summary statistics
+	 */
+	getOvertimeSummary() {
+		return backendService.getOvertimeSummary();
+	},
 });
