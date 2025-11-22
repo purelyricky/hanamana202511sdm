@@ -1,202 +1,269 @@
 import api, { route, fetch } from "@forge/api";
 
 class BackendService {
-	// API Configuration
-	static API_BASE_URL = "https://jttp-cloud.everit.biz/timetracker/api/latest/public";
-	static API_TOKEN = "eyJhY2NvdW50SWQiOiI3MTIwMjA6OWU3OWRlZTMtYzg4NC00MTg2LWFlYjktNjhlMTRlZjRmNDUwIiwiY2xpZW50SWQiOjI2NjQxLCJzZWNyZXQiOiI5VUM0cU8wUkhZdlVFdmRwUGIzV1hQcUo1dGxaZyt3Zm1yNEhydlN4eUlmeDhuY2V1em5Hb0RVLzVCYXZMT0t6NjJreUZSTDBFM1NRZHhHeER4eWlGZ1x1MDAzZFx1MDAzZCJ9";
+    JTTP_API_KEY = "eyJhY2NvdW50SWQiOiI3MTIwMjA6OWU3OWRlZTMtYzg4NC00MTg2LWFlYjktNjhlMTRlZjRmNDUwIiwiY2xpZW50SWQiOjI2NjQxLCJzZWNyZXQiOiI5VUM0cU8wUkhZdlVFdmRwUGIzV1hQcUo1dGxaZyt3Zm1yNEhydlN4eUlmeDhuY2V1em5Hb0RVLzVCYXZMT0t6NjJreUZSTDBFM1NRZHhHeER4eWlGZ1x1MDAzZFx1MDAzZCJ9";
 
-	getText(example) {
-		return `This is text from the backend! You passed: ${example}`;
-	}
+    getText(example) {
+        return `This is text from the backend! You passed: ${example}`;
+    }
 
-	/**
-	 * Fetch summary report data from Timetracker API
-	 * @param {Date} startDate - Start date for report
-	 * @param {Date} endDate - End date for report
-	 * @returns {Object} Summary report data
-	 */
-	async fetchSummaryReport(startDate, endDate) {
-		try {
-			const url = `${BackendService.API_BASE_URL}/report/summary`;
+    /**
+     * Fetch worklog summary from JTTP API using Forge's authenticated fetch
+     * @param {string} startDate - Start date in YYYY-MM-DD format
+     * @param {string} endDate - End date in YYYY-MM-DD format
+     * @param {string} [jql] - Optional JQL query
+     * @param {string} [accountId] - Optional user account ID
+     * @returns {Object} JTTP API response
+     */
+    async fetchWorklogSummary(startDate, endDate, jql, accountId) {
+        try {
+            // Use Forge's fetch (imported from @forge/api) with Jira authentication context
+            // The jttp-cloud remote is configured in manifest.yml
+            const response = await fetch("https://jttp-cloud.everit.biz/timetracker/api/latest/public/report/summary", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-everit-api-key": this.JTTP_API_KEY,
+                    "x-requested-by": "working-hours-checker",
+                },
+                body: JSON.stringify({
+                    startAt: 0,
+                    startDate,
+                    endDate,
+                    jql,
+                    groupBy: "userView",
+                    users: accountId ? [accountId] : undefined,
+                    expand: ["AUTHOR"], // Include author details with avatars
+                }),
+            });
 
-			// Format dates as yyyy-MM-dd
-			const formatDate = (date) => date.toISOString().split("T")[0];
+            if (!response.ok) {
+                const text = await response.text();
+                console.error(`JTTP API request failed: ${response.status} - ${text}`);
+                throw new Error(`Request failed: ${response.status} - ${text}`);
+            }
 
-			const requestBody = {
-				startDate: formatDate(startDate),
-				endDate: formatDate(endDate),
-				startAt: 0,
-				maxResults: 1000,
-				groupBy: "userView",
-				expand: ["AUTHOR", "PROJECT", "STATUS", "TYPE", "ASSIGNEE", "REPORTER", "PRIORITY"]
-			};
+            const data = await response.json();
+            console.log("JTTP API Response:", JSON.stringify(data, null, 2));
+            return data;
+        } catch (error) {
+            console.error("Error fetching worklog summary:", error);
+            throw error;
+        }
+    }
 
-			console.log("Fetching summary report with body:", JSON.stringify(requestBody));
+    /**
+     * Calculate required work hours for a date range
+     * @param {Date} startDate - Start date
+     * @param {Date} endDate - End date
+     * @param {number} expectedDailyHours - Expected daily hours (default 8)
+     * @param {string[]} holidays - Array of holiday dates in YYYY-MM-DD format
+     * @param {string[]} extraWorkdays - Array of extra workday dates in YYYY-MM-DD format
+     * @returns {number} Required hours
+     */
+    calculateRequiredHours(startDate, endDate, expectedDailyHours = 8, holidays = [], extraWorkdays = []) {
+        const totalDays = Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        let workdays = 0;
 
-			const response = await fetch(url, {
-				method: "POST",
-				headers: {
-					"X-Everit-API-Key": BackendService.API_TOKEN,
-					"X-Timezone": "UTC",
-					"X-Requested-By": "forge-app",
-					"Content-Type": "application/json",
-					"Accept": "application/json"
-				},
-				body: JSON.stringify(requestBody)
-			});
+        for (let i = 0; i < totalDays; i++) {
+            const currentDate = new Date(startDate);
+            currentDate.setDate(currentDate.getDate() + i);
+            
+            const dateStr = currentDate.toISOString().split("T")[0];
+            const dayOfWeek = currentDate.getDay();
+            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+            const isHoliday = holidays.includes(dateStr);
+            const isExtraWorkday = extraWorkdays.includes(dateStr);
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				console.error("Failed to fetch summary report:", response.status, errorText);
-				return null;
-			}
+            if ((!isWeekend && !isHoliday) || isExtraWorkday) {
+                workdays++;
+            }
+        }
 
-			const data = await response.json();
-			console.log("Summary report response:", JSON.stringify(data));
-			return data;
-		} catch (error) {
-			console.error("Error fetching summary report:", error);
-			return null;
-		}
-	}
+        return workdays * expectedDailyHours;
+    }
 
-	/**
-	 * Get employee work hours data with overtime calculations (using Summary Report API)
-	 * @returns {Array} Array of employee objects with calculated overtime
-	 */
-	async getEmployeeOvertimeData() {
-		try {
-			// Calculate date range (last 30 days)
-			const endDate = new Date();
-			const startDate = new Date();
-			startDate.setDate(startDate.getDate() - 30);
+    /**
+     * Get employee overtime data from JTTP API
+     * @returns {Array} Array of employee objects with overtime calculations
+     */
+    async getEmployeeOvertimeData() {
+        try {
+            const now = new Date();
+            const startOfYear = new Date(now.getFullYear(), 0, 1);
+            const startDateStr = startOfYear.toISOString().split("T")[0];
+            const endDateStr = now.toISOString().split("T")[0];
 
-			// Fetch data from Summary Report API
-			const summaryData = await this.fetchSummaryReport(startDate, endDate);
+            console.log(`Fetching worklog data from ${startDateStr} to ${endDateStr}`);
 
-			if (!summaryData || !summaryData.userView || summaryData.userView.length === 0) {
-				console.warn("No user data found in summary report, using fallback data");
-				return this.getFallbackData();
-			}
+            // Request summary — expand AUTHOR so JTTP returns avatar data within "user.avatar"
+            const summaryData = await this.fetchWorklogSummary(startDateStr, endDateStr);
 
-			// Process each user from the summary report
-			const employees = summaryData.userView.map((userEntry) => {
-				const user = userEntry.user;
+            if (!summaryData || !summaryData.userView || summaryData.userView.length === 0) {
+                console.warn("No worklog data found in JTTP API response");
+                return [];
+            }
 
-				// Parse user name
-				const displayName = user.name || "Unknown User";
-				const nameParts = displayName.split(" ");
-				const firstName = nameParts[0] || "Unknown";
-				const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "User";
+            console.log(`Found ${summaryData.userView.length} users in JTTP response`);
 
-				// Calculate total worked hours (billable + non-billable)
-				const totalSeconds = (userEntry.billableLoggedSeconds || 0) + (userEntry.nonBillableLoggedSeconds || 0);
-				const workedHours = totalSeconds / 3600; // Convert to hours
+            const requiredHours = this.calculateRequiredHours(startOfYear, now, 8, [], []);
 
-				// Default expected hours: 8 hours/day for 20 working days = 160 hours/month
-				const expectedDailyHours = 8;
-				const workDaysInPeriod = 20;
-				const expectedHours = expectedDailyHours * workDaysInPeriod;
+            const employees = summaryData.userView.map((userEntry) => {
+                const user = userEntry.user || {};
+                const totalLoggedSeconds = userEntry.totalLogged || 0;
+                const totalLoggedHours = totalLoggedSeconds / 3600;
 
-				// Calculate overtime
-				const extraHours = workedHours - expectedHours;
-				const overtimeHours = Math.max(0, extraHours);
+                // Avatar removed — return name only
+                return {
+                    id: user.id || user.accountId || "unknown",
+                    name: user.name || user.displayName || "Unknown User",
+                    totalHours: Math.round(totalLoggedHours * 100) / 100,
+                    requiredHours: Math.round(requiredHours * 100) / 100,
+                    overtime: Math.round((totalLoggedHours - requiredHours) * 100) / 100,
+                    overtimePercentage: Math.round(((totalLoggedHours - requiredHours) / (requiredHours || 1)) * 10000) / 100,
+                    billableHours: Math.round((userEntry.billableLoggedSeconds || 0) / 3600 * 100) / 100,
+                    nonBillableHours: Math.round((userEntry.nonBillableLoggedSeconds || 0) / 3600 * 100) / 100,
+                };
+            });
 
-				return {
-					id: user.id,
-					firstName,
-					lastName,
-					displayName,
-					avatar: user.avatar || null, // Avatar URLs from API
-					email: `${firstName.toLowerCase()}@company.com`, // API doesn't provide email
-					startDate: "2024-01-01", // Default start date
-					expectedDailyHours,
-					workedHours: Math.round(workedHours * 10) / 10, // Round to 1 decimal
-					expectedHours,
-					extraHours: Math.round(extraHours * 10) / 10,
-					overtimeHours: Math.round(overtimeHours * 10) / 10,
-					billableHours: Math.round((userEntry.billableLoggedSeconds / 3600) * 10) / 10,
-					nonBillableHours: Math.round((userEntry.nonBillableLoggedSeconds / 3600) * 10) / 10
-				};
-			});
+            employees.sort((a, b) => b.overtime - a.overtime);
 
-			// Filter out employees with no activity
-			return employees.filter((emp) => emp.workedHours > 0);
-		} catch (error) {
-			console.error("Error fetching employee overtime data:", error);
-			return this.getFallbackData();
-		}
-	}
+            console.log(`Successfully processed ${employees.length} employees`);
+            return employees;
+        } catch (error) {
+            console.error("Error getting employee overtime data:", error);
+            return [];
+        }
+    }
 
-	/**
-	 * Fallback data in case API calls fail
-	 * @returns {Array} Fallback employee data
-	 */
-	getFallbackData() {
-		const employees = [
-			{
-				id: "fallback-1",
-				firstName: "Alex",
-				lastName: "Thompson",
-				email: "alex.t@company.com",
-				startDate: "2024-01-15",
-				expectedDailyHours: 8,
-				workedHours: 176,
-			},
-			{
-				id: "fallback-2",
-				firstName: "Sarah",
-				lastName: "Chen",
-				email: "sarah.c@company.com",
-				startDate: "2023-06-01",
-				expectedDailyHours: 8,
-				workedHours: 168,
-			},
-			{
-				id: "fallback-3",
-				firstName: "Maria",
-				lastName: "Garcia",
-				email: "m.garcia@company.com",
-				startDate: "2024-03-10",
-				expectedDailyHours: 8,
-				workedHours: 152,
-			},
-		];
+    /**
+     * Get overtime summary statistics
+     * @returns {Object} Summary statistics
+     */
+    async getOvertimeSummary() {
+        try {
+            const employees = await this.getEmployeeOvertimeData();
 
-		const workDaysInPeriod = 20;
-		return employees.map((employee) => {
-			const expectedHours = employee.expectedDailyHours * workDaysInPeriod;
-			const extraHours = employee.workedHours - expectedHours;
-			const overtimeHours = Math.max(0, extraHours);
+            if (employees.length === 0) {
+                return {
+                    totalEmployees: 0,
+                    averageOvertime: 0,
+                    totalOvertime: 0,
+                    employeesWithOvertime: 0,
+                    employeesWithUndertime: 0,
+                };
+            }
 
-			return {
-				...employee,
-				expectedHours,
-				extraHours,
-				overtimeHours,
-			};
-		});
-	}
+            const totalOvertime = employees.reduce((sum, emp) => sum + emp.overtime, 0);
+            const averageOvertime = totalOvertime / employees.length;
+            const employeesWithOvertime = employees.filter((emp) => emp.overtime > 0).length;
+            const employeesWithUndertime = employees.filter((emp) => emp.overtime < 0).length;
 
-	/**
-	 * Calculate overtime summary statistics
-	 * @returns {Object} Summary statistics
-	 */
-	async getOvertimeSummary() {
-		const employees = await this.getEmployeeOvertimeData();
+            return {
+                totalEmployees: employees.length,
+                averageOvertime: Math.round(averageOvertime * 100) / 100,
+                totalOvertime: Math.round(totalOvertime * 100) / 100,
+                employeesWithOvertime,
+                employeesWithUndertime,
+            };
+        } catch (error) {
+            console.error("Error getting overtime summary:", error);
+            return {
+                totalEmployees: 0,
+                averageOvertime: 0,
+                totalOvertime: 0,
+                employeesWithOvertime: 0,
+                employeesWithUndertime: 0,
+            };
+        }
+    }
 
-		const totalOvertime = employees.reduce((sum, emp) => sum + emp.overtimeHours, 0);
-		const totalExpected = employees.reduce((sum, emp) => sum + emp.expectedHours, 0);
-		const totalWorked = employees.reduce((sum, emp) => sum + emp.workedHours, 0);
+    /**
+     * Fetch system users from Jira (paginated)
+     * Requires read:jira-user or appropriate scope in manifest
+     */
+    async getAllSystemUsers(maxResults = 1000) {
+        try {
+            // MUST use route`...` to satisfy Forge safe URL check
+            const res = await api.asApp().requestJira(route`/rest/api/3/users/search?startAt=0&maxResults=${maxResults}`, {
+                 method: "GET",
+                 headers: {
+                     "Accept": "application/json",
+                 },
+             });
+             if (!res.ok) {
+                 const txt = await res.text();
+                 console.error("Failed to fetch system users:", res.status, txt);
+                 return [];
+             }
+             const users = await res.json();
+             // Normalize to minimal structure (avatar removed)
+             return users.map(u => ({
+                id: u.accountId || u.key || "unknown",
+                name: u.displayName || u.name || "Unknown"
+            }));
+         } catch (err) {
+             console.error("Error fetching system users:", err);
+             return [];
+         }
+     }
 
-		return {
-			employeeCount: employees.length,
-			totalExpected: Math.round(totalExpected * 10) / 10,
-			totalWorked: Math.round(totalWorked * 10) / 10,
-			totalOvertime: Math.round(totalOvertime * 10) / 10,
-			averageOvertime: Math.round((totalOvertime / (employees.length || 1)) * 10) / 10,
-		};
-	}
+    /**
+     * Return all employees: merge system users with JTTP overtime results.
+     * Users with no JTTP logs will have zero values.
+     */
+    async getAllEmployees() {
+        try {
+            const now = new Date();
+            const startOfYear = new Date(now.getFullYear(), 0, 1);
+            const startDateStr = startOfYear.toISOString().split("T")[0];
+            const endDateStr = now.toISOString().split("T")[0];
+
+            // JTTP data for the date range
+            const jttp = await this.fetchWorklogSummary(startDateStr, endDateStr);
+            const jttpMap = new Map();
+            (jttp?.userView || []).forEach(u => {
+                const id = u.user?.id || u.user?.accountId || u.user?.name;
+                jttpMap.set(id, u);
+            });
+
+            // all system users from Jira
+            const systemUsers = await this.getAllSystemUsers();
+
+            // requiredHours same calculation as getEmployeeOvertimeData
+            const requiredHours = this.calculateRequiredHours(startOfYear, now, 8, [], []);
+
+            const employees = systemUsers.map(su => {
+                const j = jttpMap.get(su.id);
+                const totalLoggedSeconds = j ? (j.totalLogged || 0) : 0;
+                const billableSeconds = j ? (j.billableLoggedSeconds || 0) : 0;
+                const nonBillableSeconds = j ? (j.nonBillableLoggedSeconds || 0) : 0;
+                const totalHours = Math.round((totalLoggedSeconds / 3600) * 100) / 100;
+                const overtime = Math.round((totalHours - requiredHours) * 100) / 100;
+                const overtimePercentage = requiredHours > 0 ? Math.round((overtime / requiredHours) * 10000) / 100 : 0;
+
+                // Avatar removed — only include name
+                return {
+                    id: su.id,
+                    name: su.name,
+                    totalHours,
+                    requiredHours: Math.round(requiredHours * 100) / 100,
+                    overtime,
+                    overtimePercentage,
+                    billableHours: Math.round((billableSeconds / 3600) * 100) / 100,
+                    nonBillableHours: Math.round((nonBillableSeconds / 3600) * 100) / 100,
+                };
+            });
+
+            // optional: sort by overtime desc
+            employees.sort((a, b) => b.overtime - a.overtime);
+
+            return employees;
+        } catch (err) {
+            console.error("Error in getAllEmployees:", err);
+            return [];
+        }
+    }
 }
 
 export const backendService = new BackendService();

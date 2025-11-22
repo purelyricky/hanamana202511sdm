@@ -4,76 +4,13 @@ import React, { useEffect, useState } from "react";
 
 export const callBackend = makeInvoke();
 
-/**
- * Avatar component that displays user avatar from API
- */
-const UserAvatar = ({ employee }) => {
-	const { firstName, lastName, avatar, displayName } = employee;
-
-	// Use size32x32 from the API avatar object, or fallback to generated avatar
-	const avatarUrl = avatar?.size32x32 || avatar?.size48x48 || avatar?.size24x24;
-
-	const containerStyle = {
-		display: "flex",
-		alignItems: "center",
-		gap: "8px",
-	};
-
-	const avatarImgStyle = {
-		width: "32px",
-		height: "32px",
-		borderRadius: "50%",
-		flexShrink: 0,
-	};
-
-	const fallbackAvatarStyle = {
-		width: "32px",
-		height: "32px",
-		borderRadius: "50%",
-		backgroundColor: "#4C9AFF",
-		color: "white",
-		display: "inline-flex",
-		alignItems: "center",
-		justifyContent: "center",
-		fontWeight: "bold",
-		fontSize: "14px",
-		flexShrink: 0,
-	};
-
-	const nameContainerStyle = {
-		display: "flex",
-		flexDirection: "column",
-	};
-
-	const nameStyle = {
-		fontWeight: "500",
-		fontSize: "14px",
-	};
-
-	const emailStyle = {
-		fontSize: "12px",
-		color: "#6B778C",
-		marginTop: "2px",
-	};
-
-	// Generate initials for fallback
-	const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-
-	return (
-		<div style={containerStyle}>
-			{avatarUrl ? (
-				<img src={avatarUrl} alt={displayName || `${firstName} ${lastName}`} style={avatarImgStyle} />
-			) : (
-				<div style={fallbackAvatarStyle}>{initials}</div>
-			)}
-			<div style={nameContainerStyle}>
-				<span style={nameStyle}>
-					{firstName} {lastName}
-				</span>
-				<span style={emailStyle}>@{firstName.toLowerCase()}</span>
-			</div>
-		</div>
-	);
+// Employee name-only renderer (avatars removed)
+const NameOnly = ({ name }) => {
+    return (
+        <Text>
+            <Strong>{name}</Strong>
+        </Text>
+    );
 };
 
 /**
@@ -82,120 +19,102 @@ const UserAvatar = ({ employee }) => {
  * - Increased spacing and table padding to improve appearance
  */
 const App = () => {
-	const [employees, setEmployees] = useState([]);
-	const [summary, setSummary] = useState(null);
-	const [loading, setLoading] = useState(true);
+    const [employees, setEmployees] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-	useEffect(() => {
-		const fetchData = async () => {
-			try {
-				const [employeeData, summaryData] = await Promise.all([
-					callBackend("getEmployeeOvertimeData"),
-					callBackend("getOvertimeSummary"),
-				]);
-				setEmployees(employeeData);
-				setSummary(summaryData);
-			} catch (error) {
-				console.error("Error fetching overtime data:", error);
-			} finally {
-				setLoading(false);
-			}
-		};
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const employeeData = await callBackend("getEmployeeOvertimeData");
+                setEmployees(employeeData || []);
+            } catch (err) {
+                console.error("Error fetching overtime data:", err);
+                setEmployees([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+    }, []);
 
-		fetchData();
-	}, []);
+    const formatHours = (hours) => {
+        if (hours === null || hours === undefined) return "0.0h";
+        return `${hours.toFixed(1)}h`;
+    };
 
-	const formatHours = (hours) => {
-		return `${hours.toFixed(1)}h`;
-	};
+    // head: removed "Overtime %" column and adjusted widths for better balance
+    const head = {
+        cells: [
+            { key: "employee", content: "Employee", width: 30 },
+            { key: "totalHours", content: "Total", width: 12 },
+            { key: "requiredHours", content: "Required", width: 12 },
+            { key: "overtime", content: "Overtime", width: 18 },
+            { key: "billable", content: "Billable", width: 10 },
+            { key: "nonBillable", content: "Non-Billable", width: 18 },
+        ],
+    };
 
-	const formatDate = (dateString) => {
-		return new Date(dateString).toLocaleDateString("en-US", {
-			year: "numeric",
-			month: "short",
-			day: "numeric",
-		});
-	};
+    const rows = employees.map((employee) => ({
+        key: employee.id,
+        cells: [
+            {
+                key: "employee",
+                // add inline wrapper to give horizontal breathing room
+                content: (
+                    <Inline>
+                        <Box padding="space.100">
+                            <NameOnly name={employee.name} />
+                        </Box>
+                    </Inline>
+                ),
+            },
+            { key: "totalHours", content: <Box padding="space.100"><Text>{formatHours(employee.totalHours)}</Text></Box> },
+            { key: "requiredHours", content: <Box padding="space.100"><Text>{formatHours(employee.requiredHours)}</Text></Box> },
+            {
+                key: "overtime",
+                content: (
+                    <Box padding="space.100">
+                        <Badge
+                            appearance={employee.overtime >= 0 ? "primary" : "default"}
+                            text={employee.overtime >= 0 ? `+${formatHours(employee.overtime)}` : formatHours(employee.overtime)}
+                        />
+                    </Box>
+                ),
+            },
+            { key: "billable", content: <Box padding="space.100"><Text>{formatHours(employee.billableHours)}</Text></Box> },
+            { key: "nonBillable", content: <Box padding="space.100"><Text>{formatHours(employee.nonBillableHours)}</Text></Box> },
+        ],
+    }));
 
-	// Prepare table headers
-	const head = {
-		cells: [
-			{ key: "employee", content: "Employee" },
-			{ key: "startDate", content: "Start Date" },
-			{ key: "expectedDaily", content: "Expected Daily Hours" },
-			{ key: "workedHours", content: "Worked Hours" },
-			{ key: "extraHours", content: "Extra Hours" },
-			{ key: "overtimeHours", content: "Overtime Hours" },
-		],
-	};
+    if (loading) {
+        return (
+            <Stack space="space.300" alignInline="center">
+                <Heading size="medium">Work Hours Overtime Calculator</Heading>
+                <Text>Loading employee data from JTTP API...</Text>
+            </Stack>
+        );
+    }
 
-	// Prepare table rows
-	const rows = employees.map((employee) => ({
-		key: employee.id,
-		cells: [
-			{
-				key: "employee",
-				content: <UserAvatar employee={employee} />,
-			},
-			{
-				key: "startDate",
-				content: <Text>{formatDate(employee.startDate)}</Text>,
-			},
-			{
-				key: "expectedDaily",
-				content: <Text>{formatHours(employee.expectedDailyHours)}</Text>,
-			},
-			{
-				key: "workedHours",
-				content: <Text>{formatHours(employee.workedHours)}</Text>,
-			},
-			{
-				key: "extraHours",
-				content: (
-					<Badge
-						appearance={employee.extraHours >= 0 ? "primary" : "default"}
-						text={employee.extraHours >= 0 ? `+${formatHours(employee.extraHours)}` : formatHours(employee.extraHours)}
-					/>
-				),
-			},
-			{
-				key: "overtimeHours",
-				content: (
-					<Badge
-						appearance={employee.overtimeHours > 0 ? "added" : "default"}
-						text={formatHours(employee.overtimeHours)}
-					/>
-				),
-			},
-		],
-	}));
+    return (
+        // increase outer spacing so content breathes more
+        <Stack space="space.600">
+            
 
-	if (loading) {
-		return (
-			<Stack space="medium">
-				<Heading size="large">Work Hours Overtime Calculator</Heading>
-				<Text>Loading employee data...</Text>
-			</Stack>
-		);
-	}
+            <Box>
+                <Text tone="secondary">Showing users and their logged hours.</Text>
+            </Box>
 
-	return (
-		<Stack space="medium">
-			<Heading size="large">Work Hours Overtime Calculator</Heading>
-
-			{summary && (
-				<Stack space="small">
-					<Text>
-						<strong>Summary:</strong> {summary.employeeCount} employees • Total Worked:{" "}
-						{formatHours(summary.totalWorked)} • Total Overtime: {formatHours(summary.totalOvertime)} • Average
-						Overtime: {formatHours(summary.averageOvertime)}
-					</Text>
-				</Stack>
-			)}
-
-			<DynamicTable head={head} rows={rows} isLoading={loading} emptyView={<Text>No employee data available</Text>} />
-		</Stack>
-	);
+            {/* extra padding around the table to increase perceived height and spacing */}
+            <Box padding="space.200">
+                <DynamicTable
+                    head={head}
+                    rows={rows}
+                    isLoading={loading}
+                    emptyView={<Text>No employee worklog data available. Please check JTTP API connection.</Text>}
+                />
+            </Box>
+        </Stack>
+    );
 };
 
 ForgeReconciler.render(<App />);
